@@ -145,15 +145,15 @@ plt.title('基金交易策略资产变化')
 plt.legend()
 plt.show()
 
-# 计算每日收益率
-predictions_df['收益率'] = predictions_df['资产总值'].pct_change()
+# 计算每日的累计收益
+predictions_df['累计收益'] = (predictions_df['资产总值'] / predictions_df['资产总值'].iloc[0]) - 1
 
-# 绘制收益率曲线
+# 绘制累计收益曲线
 plt.figure(figsize=(10, 6))
-plt.plot(predictions_df['PredictionDate'], predictions_df['收益率'], label='收益率')
+plt.plot(predictions_df['PredictionDate'], predictions_df['累计收益'], label='累计收益')
 plt.xlabel('日期')
-plt.ylabel('收益率')
-plt.title('基金交易策略收益率变化')
+plt.ylabel('累计收益')
+plt.title('基金交易策略累计收益变化')
 plt.legend()
 plt.show()
 
