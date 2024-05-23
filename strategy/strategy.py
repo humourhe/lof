@@ -68,12 +68,6 @@ features = ['收盘价(元)_中证银行', '收盘价(元)_万得银行业', '�
 merged_df['T+2日期'] = merged_df.index.map(lambda x: td.find_t_plus_2(x).strftime('%Y-%m-%d'))
 fund_data['日期'] = fund_data.index.strftime('%Y-%m-%d')
 
-# 检查 'T+2日期' 列中的值是否在 '日期' 列中
-is_in = merged_df['T+2日期'].isin(fund_data['日期'])
-
-# 如果有匹配的值，is_in 应该包含至少一个 True
-print(any(is_in))
-
 # 使用日期对齐进行合并
 merged_df = merged_df.join(fund_data.set_index('日期')['单位净值'], on='T+2日期', rsuffix='_T+2')
 merged_df.dropna(subset=['单位净值'], inplace=True)  # 去除无效的目标变量
@@ -81,8 +75,8 @@ merged_df.dropna(subset=['单位净值'], inplace=True)  # 去除无效的目标
 X = merged_df[features]
 y = merged_df['单位净值']
 
-# 将数据划分为训练集和测试集
-split_date = '2024-04-09'
+# 将数据划分为80%训练集和20%测试集
+split_date = '2024-04-02'
 train_X = X.loc[X.index < split_date]
 train_y = y.loc[y.index < split_date]
 test_X = X.loc[X.index >= split_date]
@@ -130,15 +124,6 @@ shares = 0  # 初始份额
 daily_cash = []
 daily_shares = []
 daily_assets = []
-
-# 转换日期列为日期时间格式
-predictions_df['PredictionDate'] = pd.to_datetime(predictions_df['PredictionDate'])
-
-# 按日期分组，找到每天最早的记录
-earliest_indices = predictions_df.groupby(predictions_df['PredictionDate'].dt.date)['PredictionDate'].idxmin()
-
-# 选择最早的记录
-predictions_df = predictions_df.loc[earliest_indices]
 
 for i, row in predictions_df.iterrows():
     pred_price = row['PredictedPrice']
@@ -198,4 +183,23 @@ plt.show()
 # 计算每日的累计收益
 predictions_df['累计收益'] = (predictions_df['资产总值'] / predictions_df['资产总值'].iloc[0]) - 1
 
-# 绘制累计收益曲
+# 绘制累计收益曲线
+plt.figure(figsize=(10, 6))
+plt.plot(predictions_df['PredictionDate'], predictions_df['累计收益'], label='累计收益')
+plt.xlabel('日期')
+plt.ylabel('累计收益')
+plt.title('基金交易策略累计收益变化')
+plt.legend()
+plt.show()
+
+# 计算每日盈亏
+predictions_df['每日盈亏'] = predictions_df['资产总值'].diff().fillna(0)
+
+# 绘制每日盈亏曲线
+plt.figure(figsize=(10, 6))
+plt.plot(predictions_df['PredictionDate'], predictions_df['每日盈亏'], label='每日盈亏')
+plt.xlabel('日期')
+plt.ylabel('每日盈亏 ($)')
+plt.title('基金交易策略每日盈亏变化')
+plt.legend()
+plt.show()
