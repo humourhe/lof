@@ -22,7 +22,6 @@ index_paths = {
     '中证银行': '../raw_data/399986.SZ-中证银行指数.xlsx',
     '申万银行': '../raw_data/801780.SI-银行(申万)指数.xlsx',
     '万得银行业': '../raw_data/886052.WI-万得银行业指数.xlsx',
-    '央企银行': '../raw_data/8841787.WI-银行央企指数.xlsx',
     'LOF基金': '../raw_data/160631.SZ-银行LOF基金.xlsx'
 }
 
@@ -52,36 +51,53 @@ for name, df in index_dfs.items():
 
 # 将所有指数数据合并到一个DataFrame中
 merged_df = pd.concat(index_dfs.values(), axis=1, join='inner')
+
+# 将数据按照日期重新采样，然后获取每天的最后一条记录
+merged_df = merged_df.resample('D').last()
+
+# 删除所有的NaN值
+merged_df = merged_df.dropna(how='all')
+
 print("合并后的数据框，数据量：", merged_df.shape)
 print("合并后的数据框，数据时间范围：", merged_df.index.min(), "to", merged_df.index.max())
 
 # 为回归模型创建特征
-features = ['收盘价(元)_中证银行', '收盘价(元)_万得银行业', '收盘价(元)_申万银行', '收盘价(元)_央企银行',
-            '收盘价(元)_上证50']
-merged_df['收盘价(元)_LOF基金_前一天'] = merged_df['收盘价(元)_LOF基金'].shift(1)
-X = merged_df[features + ['收盘价(元)_LOF基金_前一天']].dropna()
-y = merged_df['开盘价(元)_LOF基金'].loc[X.index]
+features = ['收盘价(元)_中证银行', '收盘价(元)_万得银行业', '收盘价(元)_申万银行', '收盘价(元)_上证50', '收盘价(元)_LOF基金']
+
+# 创建目标变量为T+2日期的基金净值
+merged_df['T+2日期'] = merged_df.index.map(lambda x: td.find_t_plus_2(x).strftime('%Y-%m-%d'))
+fund_data['日期'] = fund_data.index.strftime('%Y-%m-%d')
+
+# 检查 'T+2日期' 列中的值是否在 '日期' 列中
+is_in = merged_df['T+2日期'].isin(fund_data['日期'])
+
+# 如果有匹配的值，is_in 应该包含至少一个 True
+print(any(is_in))
+
+# 使用日期对齐进行合并
+merged_df = merged_df.join(fund_data.set_index('日期')['单位净值'], on='T+2日期', rsuffix='_T+2')
+merged_df.dropna(subset=['单位净值'], inplace=True)  # 去除无效的目标变量
+
+X = merged_df[features]
+y = merged_df['单位净值']
 
 # 将数据划分为训练集和测试集
 split_date = '2024-04-09'
 train_X = X.loc[X.index < split_date]
-train_y = y.loc[X.index < split_date]
+train_y = y.loc[y.index < split_date]
 test_X = X.loc[X.index >= split_date]
-test_y = y.loc[X.index >= split_date]
+test_y = y.loc[y.index >= split_date]
 
 # 拟合回归模型
 model = LinearRegression()
 model.fit(train_X, train_y)
 
-# 预测下一个交易日的基金开盘价
+# 预测T+2日期的基金净值
 next_day_predictions = model.predict(test_X)
-
-# 获取每个预测日期的 T+2 交易日
-t_plus_2_dates = [td.find_t_plus_2(date) for date in test_X.index]
 
 # 创建预测DataFrame
 predictions_df = pd.DataFrame({
-    'PredictionDate': t_plus_2_dates,  # 使用计算得到的 T+2 交易日
+    'PredictionDate': test_X.index.map(lambda x: td.find_t_plus_2(x)),  # 使用计算得到的 T+2 交易日
     'PredictedPrice': next_day_predictions
 }, index=test_X.index)
 
@@ -127,22 +143,19 @@ predictions_df = predictions_df.loc[earliest_indices]
 for i, row in predictions_df.iterrows():
     pred_price = row['PredictedPrice']
     prediction_date = row['PredictionDate'].date().strftime('%Y-%m-%d')  # Convert to 'YYYY-MM-DD' format
-    actual_nav = fund_data_predictions.loc[
-        prediction_date, '单位净值'] if prediction_date in fund_data_predictions.index else None
+    actual_nav = fund_data_predictions.loc[prediction_date, '单位净值'] if prediction_date in fund_data_predictions.index else None
 
     if pd.notna(actual_nav):
         if pred_price > actual_nav * (1 + purchase_fee_rate):
             signal = '买入'
-            # 执行买入操作，假设可以完全按预测价格买入
             if cash > 0:
-                shares += cash / pred_price
+                shares += cash / actual_nav
                 cash = 0
             print(f"{prediction_date}: 买入，预测价格：{pred_price}, 实际净值：{actual_nav}")
         elif pred_price < actual_nav * (1 - redemption_fee_rate):
             signal = '卖出'
-            # 执行卖出操作，假设可以完全按预测价格卖出
             if shares > 0:
-                cash += shares * pred_price
+                cash += shares * actual_nav * (1 - redemption_fee_rate)
                 shares = 0
             print(f"{prediction_date}: 卖出，预测价格：{pred_price}, 实际净值：{actual_nav}")
         else:
@@ -184,23 +197,4 @@ plt.show()
 # 计算每日的累计收益
 predictions_df['累计收益'] = (predictions_df['资产总值'] / predictions_df['资产总值'].iloc[0]) - 1
 
-# 绘制累计收益曲线
-plt.figure(figsize=(10, 6))
-plt.plot(predictions_df['PredictionDate'], predictions_df['累计收益'], label='累计收益')
-plt.xlabel('日期')
-plt.ylabel('累计收益')
-plt.title('基金交易策略累计收益变化')
-plt.legend()
-plt.show()
-
-# 计算每日盈亏
-predictions_df['每日盈亏'] = predictions_df['资产总值'].diff().fillna(0)
-
-# 绘制每日盈亏曲线
-plt.figure(figsize=(10, 6))
-plt.plot(predictions_df['PredictionDate'], predictions_df['每日盈亏'], label='每日盈亏')
-plt.xlabel('日期')
-plt.ylabel('每日盈亏 ($)')
-plt.title('基金交易策略每日盈亏变化')
-plt.legend()
-plt.show()
+# 绘制累计收益曲
