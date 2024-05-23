@@ -142,38 +142,39 @@ predictions_df = predictions_df.loc[earliest_indices]
 
 for i, row in predictions_df.iterrows():
     pred_price = row['PredictedPrice']
-    prediction_date = row['PredictionDate'].date().strftime('%Y-%m-%d')  # Convert to 'YYYY-MM-DD' format
+    prediction_date = row['PredictionDate'].date().strftime('%Y-%m-%d')  # 将日期转换为'YYYY-MM-DD'格式
     actual_nav = fund_data_predictions.loc[prediction_date, '单位净值'] if prediction_date in fund_data_predictions.index else None
 
-    if pd.notna(actual_nav):
-        if pred_price > actual_nav * (1 + purchase_fee_rate):
+    if pd.notna(actual_nav):  # 检查实际净值是否存在
+        if pred_price > actual_nav * (1 + purchase_fee_rate):  # 如果预测价格高于考虑申购费后的实际净值
             signal = '买入'
-            if cash > 0:
-                shares += cash / actual_nav
-                cash = 0
+            if cash > 0:  # 如果有现金可用，执行买入操作
+                shares += cash / actual_nav  # 计算可以买入的份额
+                cash = 0  # 所有现金用于买入
             print(f"{prediction_date}: 买入，预测价格：{pred_price}, 实际净值：{actual_nav}")
-        elif pred_price < actual_nav * (1 - redemption_fee_rate):
+        elif pred_price < actual_nav * (1 - redemption_fee_rate):  # 如果预测价格低于考虑赎回费后的实际净值
             signal = '卖出'
-            if shares > 0:
-                cash += shares * actual_nav * (1 - redemption_fee_rate)
-                shares = 0
+            if shares > 0:  # 如果有份额可用，执行卖出操作
+                cash += shares * actual_nav * (1 - redemption_fee_rate)  # 计算卖出份额获得的现金
+                shares = 0  # 卖出所有份额
             print(f"{prediction_date}: 卖出，预测价格：{pred_price}, 实际净值：{actual_nav}")
         else:
-            signal = '持有'
+            signal = '持有'  # 如果预测价格与实际净值相差不大，则持有不动
     else:
-        signal = '数据缺失'
+        signal = '数据缺失'  # 如果实际净值不存在，标记为数据缺失
 
-    signals.append(signal)
+    signals.append(signal)  # 将交易信号添加到信号列表中
 
     # 记录每日现金、持股和资产总值
-    daily_cash.append(cash)
-    daily_shares.append(shares)
+    daily_cash.append(cash)  # 记录每日现金余额
+    daily_shares.append(shares)  # 记录每日持有份额
     if not math.isnan(actual_nav):
-        daily_asset = cash + shares * actual_nav
+        daily_asset = cash + shares * actual_nav  # 计算总资产价值
     else:
-        daily_asset = cash
+        daily_asset = cash  # 如果实际净值缺失，则将总资产视为现金
 
-    daily_assets.append(daily_asset)
+    daily_assets.append(daily_asset)  # 记录每日总资产价值
+
 
 # 将交易信号添加到DataFrame中
 predictions_df['交易信号'] = signals
