@@ -50,7 +50,7 @@ train_y = y.loc[y.index < split_date]
 test_X = X.loc[X.index >= split_date]
 test_y = y.loc[y.index >= split_date]
 
-# 拟合回归模型
+# 线性回归模型拟合回归模型
 model = LinearRegression()
 model.fit(train_X, train_y)
 

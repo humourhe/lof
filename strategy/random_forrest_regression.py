@@ -1,9 +1,10 @@
-import matplotlib.pyplot as plt
 import pandas as pd
-import tools.trading_days as td
 import math
-from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
+import tools.trading_days as td
 import matplotlib.font_manager as fm
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
 
 # 查找并设置中文字体
 zh_font_path = 'C:/Windows/Fonts/simhei.ttf'  # 根据实际情况设置路径
@@ -82,9 +83,35 @@ train_y = y.loc[y.index < split_date]
 test_X = X.loc[X.index >= split_date]
 test_y = y.loc[y.index >= split_date]
 
-# 拟合回归模型
-model = LinearRegression()
+# 拟合随机森林回归模型
+model = RandomForestRegressor(n_estimators=100, random_state=42)
 model.fit(train_X, train_y)
+
+# 预测LOF基金净值
+train_predictions = model.predict(train_X)
+test_predictions = model.predict(test_X)
+
+# 计算指标
+train_mse = mean_squared_error(train_y, train_predictions)
+test_mse = mean_squared_error(test_y, test_predictions)
+train_r2 = r2_score(train_y, train_predictions)
+test_r2 = r2_score(test_y, test_predictions)
+
+# 打印指标
+print(f"训练集MSE: {train_mse}")
+print(f"测试集MSE: {test_mse}")
+print(f"训练集R^2: {train_r2}")
+print(f"测试集R^2: {test_r2}")
+
+# 绘制实际值与预测值的对比图
+plt.figure(figsize=(14, 7))
+plt.plot(test_y.index, test_y, label='实际LOF基金净值')
+plt.plot(test_y.index, test_predictions, label='预测LOF基金净值', linestyle='dashed')
+plt.xlabel('日期')
+plt.ylabel('LOF基金净值')
+plt.title('实际LOF基金净值与预测值的基金净值对比')
+plt.legend()
+plt.show()
 
 # 预测T+2日期的基金净值
 next_day_predictions = model.predict(test_X)
