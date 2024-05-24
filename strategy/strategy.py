@@ -117,13 +117,16 @@ fund_data_predictions = fund_data.reindex(predictions_df_earliest['PredictionDat
 purchase_fee_rate = 0.015  # 假设申购费率为1.5%
 redemption_fee_rate = 0.015  # 假设赎回费率为1.5%
 signals = []
-cash = 100000  # 初始资金
+cash = 100000  # 初始100000元本金
 shares = 0  # 初始份额
 
 # 添加每日资产记录
-daily_cash = []
+daily_stocks = []
 daily_shares = []
 daily_assets = []
+
+# 初始股票数量
+stocks = cash / merged_df.loc[predictions_df.index.min()]["收盘价(元)_LOF基金"]
 
 for i, row in predictions_df.iterrows():
     pred_price = row['PredictedPrice']
@@ -131,18 +134,18 @@ for i, row in predictions_df.iterrows():
     actual_nav = fund_data_predictions.loc[prediction_date, '单位净值'] if prediction_date in fund_data_predictions.index else None
 
     if pd.notna(actual_nav):  # 检查实际净值是否存在
-        if pred_price > actual_nav * (1 + purchase_fee_rate):  # 如果预测价格高于考虑申购费后的实际净值
-            signal = '买入'
-            if cash > 0:  # 如果有现金可用，执行买入操作
-                shares += cash / actual_nav  # 计算可以买入的份额
-                cash = 0  # 所有现金用于买入
-            print(f"{prediction_date}: 买入，预测价格：{pred_price}, 实际净值：{actual_nav}")
-        elif pred_price < actual_nav * (1 - redemption_fee_rate):  # 如果预测价格低于考虑赎回费后的实际净值
-            signal = '卖出'
+        if merged_df.loc[i]["收盘价(元)_LOF基金"] > pred_price * (1 + purchase_fee_rate):  # 如果收盘价高于考虑申购费后的预测净值
+            signal = '卖出股票，买入LOF基金'
+            if stocks > 0:  # 如果有股票可用，执行卖出股票，买入LOF基金操作
+                shares += stocks / actual_nav  # 计算实际可以买入的基金份额
+                stocks = 0  # 所有股票用于买入
+            print(f"{prediction_date}: 卖出股票，买入LOF基金，预测基金净值：{pred_price}, 实际基金净值：{actual_nav}, 股票价格：{merged_df.loc[i]["收盘价(元)_LOF基金"]}")
+        elif merged_df.loc[i]["收盘价(元)_LOF基金"] < pred_price * (1 - redemption_fee_rate):  # 如果收盘价格低于考虑赎回费后的预测净值
+            signal = '买入股票，卖出LOF基金'
             if shares > 0:  # 如果有份额可用，执行卖出操作
-                cash += shares * actual_nav * (1 - redemption_fee_rate)  # 计算卖出份额获得的现金
+                stocks += (shares * actual_nav * (1 - redemption_fee_rate)) / merged_df.loc[i]["收盘价(元)_LOF基金"]  # 计算卖出份额获得的股票
                 shares = 0  # 卖出所有份额
-            print(f"{prediction_date}: 卖出，预测价格：{pred_price}, 实际净值：{actual_nav}")
+            print(f"{prediction_date}: 买入股票，卖出LOF基金，预测基金净值：{pred_price}, 实际基金净值：{actual_nav}, 股票价格：{merged_df.loc[i]["收盘价(元)_LOF基金"]}")
         else:
             signal = '持有'  # 如果预测价格与实际净值相差不大，则持有不动
     else:
@@ -151,12 +154,12 @@ for i, row in predictions_df.iterrows():
     signals.append(signal)  # 将交易信号添加到信号列表中
 
     # 记录每日现金、持股和资产总值
-    daily_cash.append(cash)  # 记录每日现金余额
+    daily_stocks.append(stocks)  # 记录每日现金余额
     daily_shares.append(shares)  # 记录每日持有份额
     if not math.isnan(actual_nav):
-        daily_asset = cash + shares * actual_nav  # 计算总资产价值
+        daily_asset = shares * actual_nav + stocks * merged_df.loc[i]["收盘价(元)_LOF基金"] # 计算总资产价值
     else:
-        daily_asset = cash  # 如果实际净值缺失，则将总资产视为现金
+        daily_asset = stocks * merged_df.loc[i]["收盘价(元)_LOF基金"] # 如果实际净值缺失，则将总资产视为现金
 
     daily_assets.append(daily_asset)  # 记录每日总资产价值
 
@@ -169,7 +172,7 @@ predictions_df['资产总值'] = daily_assets
 
 # 输出最终的资产总值
 final_assets = predictions_df['资产总值'].iloc[-1]
-print(f"初始资金: 100000, 最终资产: {final_assets}, 收益率: {(final_assets - 100000) / 100000 * 100:.2f}%")
+print(f"初始资金: {cash}, 最终资产: {final_assets}, 收益率: {(final_assets - cash) / cash * 100:.2f}%")
 
 # 绘制资产总值变化图
 plt.figure(figsize=(10, 6))
