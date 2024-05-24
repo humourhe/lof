@@ -1,5 +1,4 @@
 import pandas as pd
-import math
 import matplotlib.pyplot as plt
 import tools.trading_days as td
 import matplotlib.font_manager as fm
@@ -7,7 +6,9 @@ from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from sklearn.svm import SVR
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error, r2_score
 
 # 查找并设置中文字体
 zh_font_path = 'C:/Windows/Fonts/simhei.ttf'  # 根据实际情况设置路径
@@ -33,21 +34,21 @@ index_paths = {
 index_dfs = {}
 for name, path in index_paths.items():
     index_dfs[name] = pd.read_excel(path)
-    index_dfs[name]['日期'] = pd.to_datetime(index_dfs[name]['日期'])
-    index_dfs[name].set_index('日期', inplace=True)
+    index_dfs[name]['日期'] = pd.to_datetime(index_dfs[name]['日期'])  # 将日期列转换为datetime类型
+    index_dfs[name].set_index('日期', inplace=True)  # 将日期列设为索引
     print(f"{name} 数据加载完成，数据量：{index_dfs[name].shape}")
 
 # 加载基金净值数据
 fund_data_path = '../raw_data/鹏华中证银行A(160631.OF)-每日行情数据.xlsx'
 fund_data = pd.read_excel(fund_data_path)
 fund_data = fund_data[fund_data['日期'].apply(lambda x: isinstance(x, str) and '-' in x)]
-fund_data['日期'] = pd.to_datetime(fund_data['日期'])
-fund_data.set_index('日期', inplace=True)
+fund_data['日期'] = pd.to_datetime(fund_data['日期'])  # 将日期列转换为datetime类型
+fund_data.set_index('日期', inplace=True)  # 将日期列设为索引
 print("基金净值数据加载完成，数据量：", fund_data.shape)
 
 # 过滤9:30到14:00之间的数据
 for name, df in index_dfs.items():
-    index_dfs[name] = df.between_time('09:30', '14:00')
+    index_dfs[name] = df.between_time('09:30', '14:00')  # 过滤指定时间段的数据
 
 # 重命名列以包含指数名称
 for name, df in index_dfs.items():
@@ -80,36 +81,54 @@ merged_df.dropna(subset=['单位净值'], inplace=True)  # 去除无效的目标
 X = merged_df[features]
 y = merged_df['单位净值']
 
+# 标准化特征值
+scaler = StandardScaler()
 # 将数据划分为80%训练集和20%测试集
 split_date = '2024-04-02'
-train_X = X.loc[X.index < split_date]
+train_X = scaler.fit_transform(X.loc[X.index < split_date])
+test_X = scaler.transform(X.loc[X.index >= split_date])
 train_y = y.loc[y.index < split_date]
-test_X = X.loc[X.index >= split_date]
 test_y = y.loc[y.index >= split_date]
 
-# 定义要评估的模型
-models = {
-    'Linear Regression': LinearRegression(),
-    'Ridge Regression': Ridge(),
-    'Lasso Regression': Lasso(),
-    'SVR': SVR(),
-    'Decision Tree': DecisionTreeRegressor(),
-    'Random Forest': RandomForestRegressor(),
-    'GBDT': GradientBoostingRegressor()
+
+# 使用交叉验证来选择最佳参数
+def tune_model(model, param_grid):
+    grid_search = GridSearchCV(model, param_grid, cv=5, scoring='neg_mean_squared_error')
+    grid_search.fit(train_X, train_y)
+    best_model = grid_search.best_estimator_
+    return best_model
+
+
+# 定义要评估的模型及其参数网格
+models_param_grid = {
+    'Linear Regression': (LinearRegression(), {}),
+    'Ridge Regression': (Ridge(), {'alpha': [0.01, 0.1, 1, 10, 100]}),
+    'Lasso Regression': (Lasso(max_iter=10000), {'alpha': [0.01, 0.1, 1, 10]}),  # 增加最大迭代次数
+    'SVR': (SVR(), {'C': [0.1, 1, 10], 'epsilon': [0.01, 0.1]}),
+    'Decision Tree': (DecisionTreeRegressor(), {'max_depth': [3, 5, 7, 9]}),
+    'Random Forest': (RandomForestRegressor(), {'n_estimators': [50, 100, 200], 'max_depth': [3, 5, 7]}),
+    'GBDT': (GradientBoostingRegressor(), {'n_estimators': [50, 100, 200], 'max_depth': [3, 5, 7]})
 }
 
 # 评估每个模型
 results = {}
-for name, model in models.items():
-    model.fit(train_X, train_y)
+for name, (model, param_grid) in models_param_grid.items():
+    if param_grid:
+        model = tune_model(model, param_grid)  # 如果有参数网格，则进行调优
+    else:
+        model.fit(train_X, train_y)  # 对于线性回归，无需调优，直接训练模型
+
+    # 进行预测
     train_predictions = model.predict(train_X)
     test_predictions = model.predict(test_X)
 
+    # 计算指标
     train_mse = mean_squared_error(train_y, train_predictions)
     test_mse = mean_squared_error(test_y, test_predictions)
     train_r2 = r2_score(train_y, train_predictions)
     test_r2 = r2_score(test_y, test_predictions)
 
+    # 存储结果
     results[name] = {
         'train_mse': train_mse,
         'test_mse': test_mse,
