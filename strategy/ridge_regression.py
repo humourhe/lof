@@ -165,7 +165,7 @@ for i, row in predictions_df.iterrows():
     actual_nav = fund_data_predictions.loc[prediction_date, '单位净值'] if prediction_date in fund_data_predictions.index else None
 
     if pd.notna(actual_nav):  # 检查实际净值是否存在
-        if merged_df.loc[i]["收盘价(元)_LOF基金"] > pred_price * (1 + purchase_fee_rate):  # 如果收盘价高于考虑申购费后的预测净值
+        if merged_df.loc[i]["收盘价(元)_LOF基金"] > pred_price * (1 + purchase_fee_rate):  # 如果收盘价高于考虑申购费后的预测净值 二级市场买入基金，一级市场
             signal = '卖出股票，买入LOF基金'
             if stocks > 0:  # 如果有股票可用，执行卖出股票，买入LOF基金操作
                 shares += stocks / actual_nav  # 计算实际可以买入的基金份额
